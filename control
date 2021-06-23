@@ -1,0 +1,9 @@
+Package: com.wiimob.wiiauto
+Name: wiiauto
+Depends: mobilesubstrate, openssh, unzip, Git, org.thebigboss.wifiutil, com.mtd.ioslua, com.mtd.libcherry, com.mtd.libluaext, com.mtd.libluasqlite3, com.mtd.wiiautowatcher, com.mtd.wiiautotool
+Version: 0.0.102
+Architecture: iphoneos-arm
+Description: An awesome MobileSubstrate tweak!
+Maintainer: mtd
+Author: mtd
+Section: Tweaks

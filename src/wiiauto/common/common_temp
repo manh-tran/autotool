@@ -1,0 +1,132 @@
+#include "api.h"
+#include <sys/time.h>
+#include "cherry/core/buffer.h"
+
+#import <Metal/Metal.h>
+#import <MetalKit/MetalKit.h>
+
+const u32 arrayLength = 1 << 24;
+const u32 bufferSize = arrayLength * sizeof(float);
+
+static id<MTLDevice> _mDevice;
+static id<MTLComputePipelineState> _mAddFunctionPSO;
+static id<MTLCommandQueue> _mCommandQueue;
+
+static id<MTLBuffer> _mBufferA;
+static id<MTLBuffer> _mBufferB;
+static id<MTLBuffer> _mBufferResult;
+
+#define kBundlePath @"/Library/MobileSubstrate/DynamicLibraries/com.wiimob.wiiauto.bundle"
+
+static u64 current_timestamp() 
+{
+    struct timeval te; 
+    gettimeofday(&te, NULL);
+    u64 milliseconds = te.tv_sec*1000LL + te.tv_usec/1000;
+    return milliseconds;
+}
+
+
+static void generate(id<MTLBuffer> buffer)
+{
+    float *dataPtr = buffer.contents;
+
+    for (unsigned long index = 0; index < arrayLength; ++index) {
+        dataPtr[index] = (float)rand()/(float)(RAND_MAX);
+    }
+}
+
+static void encodeAddComand(id<MTLComputeCommandEncoder> computeEncoder) 
+{
+    [computeEncoder setComputePipelineState:_mAddFunctionPSO];
+    [computeEncoder setBuffer:_mBufferA offset:0 atIndex:0];
+    [computeEncoder setBuffer:_mBufferB offset:0 atIndex:1];
+    [computeEncoder setBuffer:_mBufferResult offset:0 atIndex:2];
+    
+    MTLSize gridSize = MTLSizeMake(arrayLength, 1, 1);
+    
+    NSUInteger threadGroupSize = _mAddFunctionPSO.maxTotalThreadsPerThreadgroup;
+    if (threadGroupSize > arrayLength)
+    {
+        threadGroupSize = arrayLength;
+    }
+    MTLSize threadgroupSize = MTLSizeMake(threadGroupSize, 1, 1);
+    
+    [computeEncoder dispatchThreadgroups:MTLSizeMake((arrayLength + threadGroupSize - 1) / threadGroupSize, 1, 1) threadsPerThreadgroup:threadgroupSize];
+}
+
+static void verifyResults()
+{
+    float* a = _mBufferA.contents;
+    float* b = _mBufferB.contents; 
+    float* result = _mBufferResult.contents;
+
+    for (unsigned long index = 0; index < arrayLength; index++)
+    {
+        if (result[index] != (a[index] + b[index])) {
+            return;
+        }
+    }
+}
+
+static void test()
+{
+    _mDevice = MTLCreateSystemDefaultDevice();    
+
+    NSBundle *bundle = [[NSBundle alloc] initWithPath:kBundlePath];
+    NSString *nspath = [bundle pathForResource:@"add" ofType:@"metallib"];
+    NSError* error = nil;
+
+    id<MTLLibrary> defaultLibrary = [_mDevice newLibraryWithFile:nspath error:&error];
+    if (defaultLibrary == nil)
+    {
+        return;
+    }
+
+    id<MTLFunction> addFunction = [defaultLibrary newFunctionWithName:@"add_arrays"];
+    if (addFunction == nil)
+    {
+        return;
+    }
+    
+    _mAddFunctionPSO = [_mDevice newComputePipelineStateWithFunction: addFunction error:&error];
+    if (_mAddFunctionPSO == nil)
+    {
+        return;
+    }
+
+    _mCommandQueue = [_mDevice newCommandQueue];
+    if (_mCommandQueue == nil)
+    {
+        return;
+    }
+
+    _mBufferA = [_mDevice newBufferWithLength:bufferSize options:MTLResourceStorageModeShared];
+    _mBufferB = [_mDevice newBufferWithLength:bufferSize options:MTLResourceStorageModeShared];
+    _mBufferResult = [_mDevice newBufferWithLength:bufferSize options:MTLResourceStorageModeShared];
+
+    generate(_mBufferA);
+    generate(_mBufferB);
+
+    id<MTLCommandBuffer> commandBuffer = [_mCommandQueue commandBuffer];
+
+    id<MTLComputeCommandEncoder> computeEncoder = [commandBuffer computeCommandEncoder];
+
+    encodeAddComand(computeEncoder);
+
+    u64 t1 = current_timestamp();
+    [computeEncoder endEncoding];
+
+    [commandBuffer commit];
+
+    [commandBuffer waitUntilCompleted];
+    u64 t2 = current_timestamp();
+
+    printf("time: %llu\n", t2 - t1);
+
+    t1 = current_timestamp();
+    verifyResults();
+    t2 = current_timestamp();
+
+    printf("time check: %llu\n", t2 - t1);
+}

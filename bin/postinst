@@ -1,0 +1,11 @@
+#!/bin/sh
+/usr/bin/ldid -S/Library/LaunchDaemons/com.wiimob.wiiauto.entitlements /usr/bin/wiiauto_run;
+# /usr/bin/ldid -S/Library/LaunchDaemons/com.wiimob.wiiauto.entitlements /Applications/WiiAuto.app/WiiAuto;
+/bin/launchctl unload /Library/LaunchDaemons/com.wiimob.wiiauto.plist;
+# /usr/bin/wiiauto_run refresh;
+/usr/bin/killall -9 fmfd;
+/usr/bin/killall -9 fmflocatord;
+/usr/bin/killall -9 findmydeviced;
+/usr/bin/killall WiiAuto;
+/bin/launchctl load /Library/LaunchDaemons/com.wiimob.wiiauto.plist;
+exit 0;

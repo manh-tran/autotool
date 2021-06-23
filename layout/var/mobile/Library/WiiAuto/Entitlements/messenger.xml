@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>T84QZS65DQ.platformFamily</string>
+	</array>
+	<key>com.apple.developer.pushkit.unrestricted-voip-regulatory</key>
+	<true/>
+	<key>com.apple.developer.team-identifier</key>
+	<string>V9WTTPBFK9</string>
+	<key>application-identifier</key>
+	<string>T84QZS65DQ.com.facebook.Messenger</string>
+	<key>aps-environment</key>
+	<string>production</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:facebook.com</string>
+		<string>applinks:m.facebook.com</string>
+		<string>applinks:www.facebook.com</string>
+		<string>applinks:m.me</string>
+		<string>applinks:www.m.me</string>
+		<string>applinks:messenger.com</string>
+		<string>applinks:www.messenger.com</string>
+		<string>applinks:msngr.com</string>
+		<string>applinks:www.msngr.com</string>
+		<string>applinks:msgr.com</string>
+		<string>applinks:www.msgr.com</string>
+		<string>webcredentials:www.facebook.com</string>
+		<string>webcredentials:m.facebook.com</string>
+		<string>webcredentials:facebook.com</string>
+	</array>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.facebook.Messenger</string>
+		<string>group.com.facebook.family</string>
+	</array>
+</dict>
+</plist>

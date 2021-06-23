@@ -1,0 +1,431 @@
+#include "set_timer.h"
+#include "../preference/preference.h"
+#include "cherry/core/map.h"
+#include "cherry/core/array.h"
+#include "cherry/core/buffer.h"
+#include "wiiauto/lua/lua.h"
+#include "cherry/thread/thread.h"
+#include "wiiauto/file/file.h"
+#include "wiiauto/common/common.h"
+#include "wiiauto/thread/thread.h"
+
+/* script threads */
+
+static CFRunLoopRef __run_loop__ = NULL;
+
+/**/
+
+local_type(timer);
+
+typedef struct
+{
+    u8 repeat;
+    i32 interval;
+    time_t fire_time;
+    u8 enable;
+    buffer url;
+    u8 running;
+    u8 inscript;
+    u8 executable;
+    spin_lock barrier;
+    CFRunLoopTimerRef ref;
+
+    timer *ptr;
+}
+__timer;
+
+make_local_type(timer, __timer);
+
+static void __timer_init(__timer *__p)
+{
+    __p->enable = 1;
+    __p->repeat = 0;
+    __p->interval = 0;
+    __p->fire_time = 0;
+    __p->running = 0;
+    __p->barrier = SPIN_LOCK_INIT;
+    __p->inscript = 0;
+    __p->ref = NULL;
+    __p->executable = 1;
+    __p->ptr = NULL;
+    buffer_new(&__p->url);
+}
+
+static void __timer_clear(__timer *__p)
+{
+    release(__p->url.iobj);
+}
+
+static map __runnings__ = {id_null};
+static array __caches__ = {id_null};
+static spin_lock __runnings_barrier__ = SPIN_LOCK_INIT;
+static spin_lock __scan_barrier__ = SPIN_LOCK_INIT;
+
+static void __attribute__((constructor)) __running_in()
+{
+    if (!id_validate(__runnings__.iobj)) {
+        map_new(&__runnings__);
+    }
+    if (!id_validate(__caches__.iobj)) {
+        array_new(&__caches__);
+    }
+}
+
+/*
+ * callback
+ */
+
+void wiiauto_daemon_remove_timer_internal(const char *__url)
+{
+    static spin_lock __local_barrier__ = SPIN_LOCK_INIT;
+
+    buffer b;
+    const char *url = NULL;
+
+    buffer_new(&b);
+    wiiauto_convert_url(__url, b);
+    buffer_get_ptr(b, &url);
+
+    lock(&__local_barrier__);
+
+    wiiauto_preference pref;
+    timer t;
+    __timer *__t;   
+
+    wiiauto_daemon_preference_get("/timer.db", &pref);
+
+    wiiauto_lua_stop_file(url);
+
+    lock(&__runnings_barrier__);
+    map_get(__runnings__, key_str(url), &t.iobj);
+    if (id_validate(t.iobj)) {
+        timer_fetch(t, &__t);
+        if (__t->enable) {
+            __t->enable = 0;
+            __t->running = 0;
+            __t->executable = 0;
+
+            wiiauto_preference_clear_timer(pref, url);
+            wiiauto_preference_save(pref);
+
+            map_remove(__runnings__, key_str(url));
+
+            if (!__t->inscript) {
+                CFRunLoopTimerSetNextFireDate(__t->ref, CFAbsoluteTimeGetCurrent() + 0.125);
+            }
+        }
+    }
+    unlock(&__runnings_barrier__);
+
+    unlock(&__local_barrier__);
+
+    release(b.iobj);
+}
+
+static void __callback_execute(const timer t, const thread_pool pool)
+{
+    const char *url;
+    __timer *__t;
+
+    retain(t.iobj);
+    
+    if (id_validate(t.iobj)) {
+        timer_fetch(t, &__t);
+        buffer_get_ptr(__t->url, &url);
+        
+        if (__t->executable) {
+            __t->inscript = 1;
+            wiiauto_lua_execute_file(url, 0, NULL, NULL, NULL);
+            __t->inscript = 0;
+        }
+
+        if (__t->repeat && __t->enable) {
+            CFRunLoopTimerSetNextFireDate(__t->ref, CFAbsoluteTimeGetCurrent() + __t->interval);
+        }    
+        __t->running = 0;
+    }
+
+    release(t.iobj);
+
+finish:
+    wiiauto_recycle_thread_pool(pool);
+}
+
+static void callback(CFRunLoopTimerRef tm, timer *t)
+{
+    __timer *__t;
+    const char *ptr;
+    thread_pool pool;
+    thread_job job;
+
+    if (!t) {
+        goto cancel;
+    }
+
+    if (!id_validate(t->iobj)) {
+        goto cancel;
+    }
+
+    timer_fetch(*t, &__t);
+    if (__t->enable == 0) {
+        goto cancel;
+    }
+
+    /* execute */
+    buffer_get_ptr(__t->url, &ptr);
+    
+    lock(&__t->barrier);
+    if (__t->running == 0) {
+        __t->running = 1;
+
+        wiiauto_get_thread_pool(&pool);
+        thread_job_new(&job);
+        thread_job_set_callback(job, (thread_job_callback)__callback_execute);
+        thread_job_add_arguments(job, t->iobj);
+        thread_job_add_arguments(job, pool.iobj);
+        thread_pool_add_job(pool, job);
+        release(job.iobj);  
+    }
+    unlock(&__t->barrier);    
+
+    if (__t->repeat == 0 && __t->running == 0) {        
+        wiiauto_daemon_remove_timer_internal(ptr);
+        goto cancel;
+    }
+    return;
+
+cancel:
+    CFRunLoopTimerInvalidate(tm);
+    CFRelease(tm);
+}
+
+static void __run(const char *url, const time_t fire_time, const u8 repeat, const i32 interval)
+{
+    timer *t;
+    __timer *__t;
+
+    t = malloc(sizeof(timer));
+    timer_new(t);
+    timer_fetch(*t, &__t);
+    __t->fire_time = fire_time;
+    __t->repeat = repeat;
+    __t->interval = interval;
+    __t->enable = 1;
+    __t->running = 0;
+    __t->executable = 1;
+    __t->ptr = t;
+    buffer_append(__t->url, url, strlen(url));
+
+    CFRunLoopRef rl = __run_loop__;
+    CFRunLoopTimerContext ctx;
+    ctx.retain = NULL;
+    ctx.release = NULL;
+    ctx.copyDescription = NULL;
+    ctx.version = 0;
+    ctx.info = t;
+    CFRunLoopTimerRef timer = CFRunLoopTimerCreate(kCFAllocatorDefault, fire_time - 978307200, 9999999, 0, 0, (void(*)(CFRunLoopTimerRef, void *))callback, &ctx);
+    __t->ref = timer;
+
+    lock(&__runnings_barrier__);
+    map_set(__runnings__, key_str(url), t->iobj);
+    unlock(&__runnings_barrier__);
+
+    lock(&__scan_barrier__);
+    array_push(__caches__, t->iobj);
+    release(t->iobj);
+    unlock(&__scan_barrier__);
+
+    CFRunLoopAddTimer(rl, timer, kCFRunLoopCommonModes);       
+}
+
+void wiiauto_daemon_add_timer_internal(const char *__url, const time_t fire_time, const u8 repeat, const i32 interval)
+{
+    static spin_lock __local_barrier__ = SPIN_LOCK_INIT;
+    buffer b;
+    const char *url;
+
+    buffer_new(&b);
+    wiiauto_convert_url(__url, b);
+    buffer_get_ptr(b, &url);
+
+    lock(&__local_barrier__);
+    wiiauto_daemon_remove_timer_internal(url);
+
+    wiiauto_preference pref;
+    wiiauto_daemon_preference_get("/timer.db", &pref);
+
+    wiiauto_preference_set_timer(pref, url, fire_time, repeat, interval);
+    wiiauto_preference_save(pref);
+
+    __run(url, fire_time, repeat, interval);
+
+    unlock(&__local_barrier__);
+
+    release(b.iobj);
+}
+
+void wiiauto_daemon_set_timer_enable(const char *__url, const u8 enable)
+{
+    buffer b;
+    const char *url;
+    timer t;
+    __timer *__t;
+
+    buffer_new(&b);
+    wiiauto_convert_url(__url, b);
+    buffer_get_ptr(b, &url);
+
+    lock(&__runnings_barrier__);
+    map_get(__runnings__, key_str(url), &t.iobj);
+    retain(t.iobj);
+    if (id_validate(t.iobj)) {
+        timer_fetch(t, &__t);
+        if (__t->enable) {
+            __t->executable = enable;
+
+            wiiauto_preference pref;
+            wiiauto_daemon_preference_get("/timer.db", &pref);
+
+            wiiauto_preference_enable_timer(pref, url, enable);
+            wiiauto_preference_save(pref);
+        }
+    }
+    release(t.iobj);
+    unlock(&__runnings_barrier__);
+
+    release(b.iobj);
+}
+
+CFDataRef daemon_handle_set_timer(const __wiiauto_event_set_timer *input)
+{
+    wiiauto_daemon_add_timer_internal(input->url, input->fire_time, input->repeat, input->interval);
+
+    return NULL;
+}
+
+CFDataRef daemon_handle_remove_timer(const __wiiauto_event_remove_timer *input)
+{
+    wiiauto_daemon_remove_timer_internal(input->url);
+
+    return NULL;
+}
+
+static void __callback_scan(const thread_pool pool)
+{
+    timer *ptr;
+    timer t;
+    __timer *__t;
+    while (true) {
+        
+        i32 index;
+
+        lock(&__scan_barrier__);
+
+        index = 0;
+        array_get(__caches__, index, &t.iobj);
+        while (id_validate(t.iobj)) {
+
+            timer_fetch(t, &__t);
+            if (!__t->enable && !__t->inscript && id_refcount(t.iobj) == 1) {
+                ptr = __t->ptr;
+
+                array_remove(__caches__, index);
+                index--;
+
+                free(ptr);
+            }
+
+            index++;
+            array_get(__caches__, index, &t.iobj);
+        }
+
+        unlock(&__scan_barrier__);
+
+        usleep(1000000);
+    }
+    wiiauto_recycle_thread_pool(pool);
+}
+
+static void __scan()
+{
+    thread_pool pool;
+    thread_job job;
+
+    wiiauto_get_thread_pool(&pool);
+    thread_job_new(&job);
+    thread_job_set_callback(job, (thread_job_callback)__callback_scan);
+    thread_job_add_arguments(job, pool.iobj);
+    thread_pool_add_job(pool, job);
+    release(job.iobj);  
+}
+
+void wiiauto_daemon_timer_init()
+{
+    __running_in();
+
+    wiiauto_preference pref;
+    i32 i;
+    const char *url;
+    time_t fire_time;
+    u8 repeat;
+    i32 interval;
+    u8 enable;
+
+    __run_loop__ = CFRunLoopGetCurrent();
+
+    wiiauto_daemon_preference_get("/timer.db", &pref);
+
+    i = 0;
+    wiiauto_preference_iterate_timer(pref, i, &url, &fire_time, &repeat, &interval, &enable);
+    while (url) {
+
+        if (enable) {
+            buffer b;
+            const char *__url;
+
+            buffer_new(&b);
+            wiiauto_convert_url(url, b);
+            buffer_get_ptr(b, &__url);
+
+            if (strncmp(url, "/var", 4) == 0) {
+                wiiauto_preference_clear_timer(pref, url);
+                wiiauto_preference_set_timer(pref, __url, fire_time, repeat, interval);
+                wiiauto_preference_enable_timer(pref, __url, enable);
+                wiiauto_preference_save(pref);
+                i = -1;
+            }
+                
+            release(b.iobj);
+        }
+
+        free(url);
+
+        i++;
+        wiiauto_preference_iterate_timer(pref, i, &url, &fire_time, &repeat, &interval, &enable);
+    }
+
+
+    i = 0;
+    wiiauto_preference_iterate_timer(pref, i, &url, &fire_time, &repeat, &interval, &enable);
+    while (url) {
+
+        if (enable) {
+            buffer b;
+            const char *__url;
+
+            buffer_new(&b);
+            wiiauto_convert_url(url, b);
+            buffer_get_ptr(b, &__url);
+
+            __run(__url, fire_time, repeat, interval);
+            release(b.iobj);
+        }
+
+        free(url);
+
+        i++;
+        wiiauto_preference_iterate_timer(pref, i, &url, &fire_time, &repeat, &interval, &enable);
+    }
+
+    __scan();
+}

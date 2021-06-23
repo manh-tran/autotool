@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+	</array>
+	<key>com.apple.developer.networking.multicast</key>
+	<true/>
+	<key>com.apple.accounts.facebook.defaultaccess</key>
+	<true/>
+	<key>application-identifier</key>
+	<string>T84QZS65DQ.com.facebook.Facebook</string>
+	<key>aps-environment</key>
+	<string>production</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:www.facebook.com</string>
+		<string>applinks:m.facebook.com</string>
+		<string>applinks:facebook.com</string>
+		<string>applinks:www.fb.gg</string>
+		<string>applinks:fb.gg</string>
+		<string>applinks:fb.me</string>
+		<string>applinks:www.fb.me</string>
+		<string>applinks:fbwat.ch</string>
+		<string>applinks:www.fbwat.ch</string>
+		<string>applinks:fb.watch</string>
+		<string>applinks:www.fb.watch</string>
+		<string>applinks:msngr.com</string>
+		<string>applinks:www.msngr.com</string>
+		<string>webcredentials:www.facebook.com</string>
+		<string>webcredentials:m.facebook.com</string>
+		<string>webcredentials:facebook.com</string>
+	</array>
+	<key>com.apple.developer.networking.wifi-info</key>
+	<true/>
+	<key>com.apple.developer.siri</key>
+	<true/>
+	<key>com.apple.developer.team-identifier</key>
+	<string>V9WTTPBFK9</string>
+	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
+	<string>V9WTTPBFK9.com.facebook.Wilde</string>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>T84QZS65DQ.platformFamily</string>
+	</array>
+	<key>com.apple.developer.networking.HotspotConfiguration</key>
+	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.facebook.Facebook</string>
+		<string>group.com.facebook.family</string>
+	</array>
+</dict>
+</plist>

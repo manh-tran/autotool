@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.networking.wifi-info</key>
+	<true/>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>EQHXZ8M8AV.com.google.ios.youtube</string>
+		<string>EQHXZ8M8AV.com.google.common.SSO</string>
+	</array>
+	<key>application-identifier</key>
+	<string>EQHXZ8M8AV.com.google.ios.youtube</string>
+	<key>aps-environment</key>
+	<string>production</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:www.youtube.com</string>
+		<string>applinks:youtu.be</string>
+		<string>applinks:youtube.com</string>
+		<string>applinks:m.youtube.com</string>
+	</array>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.google.YouTube</string>
+		<string>group.com.google.common</string>
+	</array>
+</dict>
+</plist>
